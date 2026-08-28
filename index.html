@@ -472,6 +472,7 @@ function initFirebase(){
   }
 }
 
+let deepLinkChecked = false;
 function listenToPosts(){
   db.collection('posts').onSnapshot(snap=>{
     posts = snap.docs.map(d=>d.data());
@@ -481,6 +482,15 @@ function listenToPosts(){
       if(typeof p.commentCount !== 'number') p.commentCount = 0;
     });
     render();
+    if(!deepLinkChecked){
+      deepLinkChecked = true;
+      const params = new URLSearchParams(location.search);
+      const storyId = params.get('story');
+      if(storyId){
+        const match = posts.find(p=>p.id===storyId);
+        if(match) openReader(match);
+      }
+    }
   }, err=>{ showToast('Could not load stories: ' + err.message); });
 }
 
@@ -857,6 +867,7 @@ function openReader(p){
     <div class="meta"><span>${escapeHtml(p.author || 'Newsroom')}</span><span>${formatDate(p.createdAt)}</span></div>
     <div class="reader-actions">
       <button class="like-btn${liked?' liked':''}" id="readerLikeBtn">❤ <span id="likeCount">${p.likes||0}</span></button>
+      <button class="like-btn" id="readerShareBtn">🔗 Share</button>
     </div>
     ${renderStoryBlocks(p.blocks)}
     <div class="comments-section">
@@ -870,9 +881,38 @@ function openReader(p){
     </div>
   `;
   readerOverlay.classList.add('open');
-  document.getElementById('closeReader').addEventListener('click', ()=>{
+
+  const shareUrl = location.origin + location.pathname + '?story=' + encodeURIComponent(p.id);
+  history.pushState({storyId:p.id}, '', shareUrl);
+
+  function closeReaderView(){
     readerOverlay.classList.remove('open');
     if(readerCommentsUnsub){ readerCommentsUnsub(); readerCommentsUnsub = null; }
+    if(location.search.includes('story=')){
+      history.pushState({}, '', location.pathname);
+    }
+  }
+  document.getElementById('closeReader').addEventListener('click', closeReaderView);
+
+  document.getElementById('readerShareBtn').addEventListener('click', async ()=>{
+    if(navigator.share){
+      try{
+        await navigator.share({ title: p.headline, text: p.dek, url: shareUrl });
+      }catch(e){ /* user cancelled share sheet, ignore */ }
+      return;
+    }
+    try{
+      await navigator.clipboard.writeText(shareUrl);
+      showToast('Link copied — paste it anywhere to share');
+    }catch(e){
+      const tmp = document.createElement('input');
+      tmp.value = shareUrl;
+      document.body.appendChild(tmp);
+      tmp.select();
+      document.execCommand('copy');
+      document.body.removeChild(tmp);
+      showToast('Link copied — paste it anywhere to share');
+    }
   });
 
   document.getElementById('readerLikeBtn').addEventListener('click', async ()=>{
@@ -918,9 +958,11 @@ function openReader(p){
     textInput.value = '';
     showToast('Comment posted');
   });
+
+  readerOverlay.onclick = (e)=>{ if(e.target===readerOverlay) closeReaderView(); };
 }
-readerOverlay.addEventListener('click', (e)=>{
-  if(e.target===readerOverlay){
+window.addEventListener('popstate', ()=>{
+  if(readerOverlay.classList.contains('open') && !location.search.includes('story=')){
     readerOverlay.classList.remove('open');
     if(readerCommentsUnsub){ readerCommentsUnsub(); readerCommentsUnsub = null; }
   }
