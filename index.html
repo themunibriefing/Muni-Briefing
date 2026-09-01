@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Muni Briefing</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="theme-color" content="#1B2233">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Muni Briefing">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400;1,8..60,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -269,6 +278,7 @@
   <div class="dateline">
     <span id="today"></span>
     <div class="header-actions">
+      <button class="link-btn" id="installBtn" style="display:none">Install app</button>
       <button class="link-btn" id="editorLoginBtn">Editor login</button>
       <button class="link-btn" id="editorLogoutBtn" style="display:none">Log out</button>
       <button class="add-btn" id="openAdd" style="display:none">+ Add a story</button>
@@ -1006,6 +1016,35 @@ document.getElementById('editorLogoutBtn').addEventListener('click', ()=>{
 window.addEventListener('scroll', ()=>{
   masthead.classList.toggle('flat', window.scrollY > 40);
 }, { passive:true });
+
+/* ---------- PWA install + service worker ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+
+let deferredInstallPrompt = null;
+const installBtn = document.getElementById('installBtn');
+
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  installBtn.style.display = 'inline';
+});
+
+installBtn.addEventListener('click', async ()=>{
+  if(!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if(outcome === 'accepted'){ showToast('Installed — check your home screen'); }
+  deferredInstallPrompt = null;
+  installBtn.style.display = 'none';
+});
+
+window.addEventListener('appinstalled', ()=>{
+  installBtn.style.display = 'none';
+});
 
 initFirebase();
 </script>
