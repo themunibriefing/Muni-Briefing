@@ -9,6 +9,18 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
 <meta name="theme-color" content="#1B2233">
+
+<!-- Open Graph / link previews (site-wide fallback — replace YOUR-SITE-URL with your real GitHub Pages URL) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="The Muni Briefing">
+<meta property="og:title" content="The Muni Briefing">
+<meta property="og:description" content="Authentic & Reliable Updates — student news from Muni University">
+<meta property="og:image" content="https://YOUR-SITE-URL/icon-512.png">
+<meta property="og:url" content="https://YOUR-SITE-URL/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="The Muni Briefing">
+<meta name="twitter:description" content="Authentic & Reliable Updates — student news from Muni University">
+<meta name="twitter:image" content="https://YOUR-SITE-URL/icon-512.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -110,6 +122,7 @@
 
   /* Hero (pinned) */
   .hero{
+    position:relative;
     display:grid; grid-template-columns:1.15fr 1fr; gap:0;
     background:var(--paper); border-radius:14px; overflow:hidden;
     box-shadow:var(--shadow-lg); margin-bottom:40px; cursor:pointer;
@@ -155,13 +168,13 @@
   .meta-stats{display:flex; gap:12px; align-items:center;}
   .stat{display:flex; align-items:center; gap:4px;}
 
-  .card-actions{position:absolute; top:10px; right:10px; display:flex; gap:6px; opacity:0; transition:opacity .15s ease;}
+  .card-actions{position:absolute; top:10px; right:10px; display:flex; gap:6px;}
   .card{position:relative;}
-  .card:hover .card-actions{opacity:1;}
   .icon-btn{
     background:rgba(27,34,51,.8); color:#fff; border:none; width:26px; height:26px;
     border-radius:50%; font-size:12px; cursor:pointer; line-height:26px; text-align:center;
   }
+  .icon-btn.pin-on{background:var(--accent);}
 
   .empty{
     grid-column:1/-1; text-align:center; color:var(--ink-soft); font-size:13.5px;
@@ -181,8 +194,24 @@
   /* Overlays */
   .overlay{position:fixed; inset:0; background:rgba(20,24,36,.72); display:none; align-items:flex-start; justify-content:center; padding:40px 18px; overflow-y:auto; z-index:60;}
   .overlay.open{display:flex;}
+  #readerOverlay{background:var(--paper); padding:0;}
   .sheet{background:var(--paper); max-width:700px; width:100%; padding:30px 30px 36px; border-radius:12px; position:relative; box-shadow:var(--shadow-lg);}
   .sheet-close{position:absolute; top:16px; right:18px; background:none; border:none; font-size:22px; cursor:pointer; color:var(--ink-soft);}
+  .reader.sheet{max-width:760px; box-shadow:none; border-radius:0; padding:0 30px 60px;}
+  .reader-topbar{
+    position:sticky; top:0; z-index:5; background:var(--paper);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 0; margin-bottom:20px; border-bottom:1px solid var(--line);
+  }
+  .back-btn{
+    background:none; border:none; cursor:pointer; color:var(--ink-soft); font-size:13px;
+    display:flex; align-items:center; gap:6px; font-weight:600;
+  }
+  .back-btn:hover{color:var(--ink);}
+  .reader-editor-actions{display:flex; gap:8px;}
+  .reader-editor-actions .icon-btn{background:var(--paper-alt); color:var(--ink-soft); border:1px solid var(--line);}
+  .reader-editor-actions .icon-btn:hover{color:var(--ink); border-color:var(--ink-soft);}
+  .reader-editor-actions .icon-btn.pin-on{background:var(--accent-tint); color:var(--accent); border-color:var(--accent);}
   .sheet h3{font-family:'Source Serif 4', serif; font-size:22px; margin:0 0 20px; font-weight:700;}
 
   label{display:block; font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); margin:16px 0 6px;}
@@ -526,6 +555,12 @@ async function changeLikes(postId, delta){
     });
   }catch(e){ showToast('Could not update like: ' + e.message); }
 }
+async function togglePin(postId, nextState){
+  try{
+    await db.collection('posts').doc(postId).update({ pinned: nextState });
+    showToast(nextState ? 'Story pinned to the top' : 'Story unpinned');
+  }catch(e){ showToast('Could not update pin: ' + e.message); }
+}
 
 let readerCommentsUnsub = null;
 function listenToComments(postId, onUpdate){
@@ -610,6 +645,11 @@ function render(){
     const hero = document.createElement('div');
     hero.className = 'hero';
     hero.innerHTML = `
+      ${isEditor ? `<div class="card-actions">
+        <button class="icon-btn pin-on" data-pin="${heroPost.id}" title="Unpin" aria-label="Toggle pin">📌</button>
+        <button class="icon-btn" data-edit="${heroPost.id}" title="Edit" aria-label="Edit">✎</button>
+        <button class="icon-btn" data-del="${heroPost.id}" title="Delete" aria-label="Delete">×</button>
+      </div>` : ''}
       ${thumb ? `<img class="hero-img" src="${thumb}" alt="">` : `<div class="hero-img card-img placeholder">NO IMAGE</div>`}
       <div class="hero-body">
         <span class="hero-badge">★ Featured</span>
@@ -623,7 +663,25 @@ function render(){
         </div>
       </div>
     `;
-    hero.addEventListener('click', ()=>openReader(heroPost));
+    hero.addEventListener('click', (e)=>{
+      if(e.target.closest('.icon-btn')) return;
+      openReader(heroPost);
+    });
+    hero.querySelectorAll('[data-pin]').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{ e.stopPropagation(); await togglePin(heroPost.id, false); });
+    });
+    hero.querySelectorAll('[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{ e.stopPropagation(); openForm(heroPost); });
+    });
+    hero.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        e.stopPropagation();
+        if(confirm('Remove this story from the board?')){
+          await deletePostDoc(heroPost.id);
+          showToast('Story removed');
+        }
+      });
+    });
     heroSlot.appendChild(hero);
   }
 
@@ -635,6 +693,7 @@ function render(){
     card.style.animation = `fadeIn .4s ease ${i*0.03}s backwards`;
     card.innerHTML = `
       ${isEditor ? `<div class="card-actions">
+        <button class="icon-btn${p.pinned?' pin-on':''}" data-pin="${p.id}" title="${p.pinned?'Unpin':'Pin to top'}" aria-label="Toggle pin">📌</button>
         <button class="icon-btn" data-edit="${p.id}" title="Edit" aria-label="Edit">✎</button>
         <button class="icon-btn" data-del="${p.id}" title="Delete" aria-label="Delete">×</button>
       </div>` : ''}
@@ -660,6 +719,14 @@ function render(){
     boardEl.appendChild(card);
   });
 
+  boardEl.querySelectorAll('[data-pin]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.getAttribute('data-pin');
+      const p = posts.find(x=>x.id===id);
+      if(p) await togglePin(id, !p.pinned);
+    });
+  });
   boardEl.querySelectorAll('[data-del]').forEach(btn=>{
     btn.addEventListener('click', async (e)=>{
       e.stopPropagation();
@@ -870,7 +937,14 @@ function renderStoryBlocks(blocks){
 function openReader(p){
   const liked = likedPosts.has(p.id);
   readerContent.innerHTML = `
-    <button class="sheet-close" id="closeReader">×</button>
+    <div class="reader-topbar">
+      <button class="back-btn" id="closeReader">← Back</button>
+      ${isEditor ? `<div class="reader-editor-actions">
+        <button class="icon-btn${p.pinned?' pin-on':''}" id="readerPinBtn" title="${p.pinned?'Unpin':'Pin to top'}">📌</button>
+        <button class="icon-btn" id="readerEditBtn" title="Edit">✎</button>
+        <button class="icon-btn" id="readerDelBtn" title="Delete">×</button>
+      </div>` : ''}
+    </div>
     ${p.coverImage ? `<img class="reader-img" src="${p.coverImage}" alt="">` : ''}
     <span class="tag${p.pinned?' pinned-tag':''}">${p.pinned?'★ ':''}${escapeHtml(p.category)}</span>
     <h1>${escapeHtml(p.headline)}</h1>
@@ -891,6 +965,7 @@ function openReader(p){
     </div>
   `;
   readerOverlay.classList.add('open');
+  readerOverlay.scrollTop = 0;
 
   const shareUrl = location.origin + location.pathname + '?story=' + encodeURIComponent(p.id);
   history.pushState({storyId:p.id}, '', shareUrl);
@@ -904,11 +979,38 @@ function openReader(p){
   }
   document.getElementById('closeReader').addEventListener('click', closeReaderView);
 
+  if(isEditor){
+    document.getElementById('readerPinBtn').addEventListener('click', async ()=>{
+      await togglePin(p.id, !p.pinned);
+      closeReaderView();
+    });
+    document.getElementById('readerEditBtn').addEventListener('click', ()=>{
+      closeReaderView();
+      openForm(p);
+    });
+    document.getElementById('readerDelBtn').addEventListener('click', async ()=>{
+      if(confirm('Remove this story from the board?')){
+        closeReaderView();
+        await deletePostDoc(p.id);
+        showToast('Story removed');
+      }
+    });
+  }
+
   document.getElementById('readerShareBtn').addEventListener('click', async ()=>{
-    if(navigator.share){
+    const shareData = { title: p.headline, text: p.dek, url: shareUrl };
+    if(p.coverImage && navigator.canShare){
       try{
-        await navigator.share({ title: p.headline, text: p.dek, url: shareUrl });
-      }catch(e){ /* user cancelled share sheet, ignore */ }
+        const blob = await (await fetch(p.coverImage)).blob();
+        const file = new File([blob], 'headline.jpg', { type: blob.type || 'image/jpeg' });
+        if(navigator.canShare({ files:[file] })){
+          await navigator.share({ files:[file], title: p.headline, text: `${p.dek}\n\n${shareUrl}` });
+          return;
+        }
+      }catch(e){ /* fall through to link-only share below */ }
+    }
+    if(navigator.share){
+      try{ await navigator.share(shareData); }catch(e){ /* user cancelled */ }
       return;
     }
     try{
